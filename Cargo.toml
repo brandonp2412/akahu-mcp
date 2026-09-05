@@ -1,0 +1,27 @@
+[package]
+name = "akahu-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+description = "Read-only Model Context Protocol server for the Akahu financial API"
+license = "MIT"
+repository = "https://github.com/brandonp2412/akahu-mcp"
+documentation = "https://docs.rs/akahu-mcp"
+readme = "README.md"
+keywords = ["akahu", "mcp", "banking", "finance", "new-zealand"]
+categories = ["api-bindings", "command-line-utilities"]
+
+[dependencies]
+chrono = "0.4"
+reqwest = { version = "0.13.4", default-features = false, features = ["json", "query", "rustls"] }
+rmcp = { version = "3.2.0", features = ["transport-io"] }
+schemars = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1.0", features = ["io-std", "macros", "rt-multi-thread", "time"] }
+url = "2.5"
+
+[profile.release]
+codegen-units = 1
+lto = "thin"
+strip = "symbols"
