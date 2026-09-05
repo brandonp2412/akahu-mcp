@@ -638,7 +638,7 @@ mod tests {
         let payload = json!({
             "items": [{
                 "name": "Example Person",
-                "formatted_account": "12-3456-7890123-00",
+                "formatted_account": "00-0000-0000000-00",
                 "_id": "acc_example",
                 "_authorisation": "authorisation_example",
                 "_credentials": "credentials_example",
@@ -649,7 +649,7 @@ mod tests {
         assert_eq!(masked["items"][0]["name"], "Example Person");
         assert_eq!(
             masked["items"][0]["formatted_account"],
-            "••-••••-•••••23-00"
+            "••-••••-•••••00-00"
         );
         assert_eq!(masked["items"][0]["_id"], "acc_example");
         assert_eq!(masked["items"][0]["_authorisation"], REDACTED);
@@ -668,7 +668,7 @@ mod tests {
                 "merchant": {"name": "Example Store"},
                 "other_account": {
                     "name": "Example Person",
-                    "account_number": "12-3456-7890123-00"
+                    "account_number": "00-0000-0000000-00"
                 }
             }]
         });
@@ -679,7 +679,7 @@ mod tests {
         );
         assert_eq!(
             masked["items"][0]["other_account"]["account_number"],
-            "••-••••-•••••23-00"
+            "••-••••-•••••00-00"
         );
         assert_eq!(masked["items"][0]["_user"], "user_example");
         assert_eq!(masked["items"][0]["hash"], "transaction_hash");

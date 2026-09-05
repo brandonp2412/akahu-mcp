@@ -4,9 +4,6 @@
 !.env.example
 *.pem
 *.key
-.env
-.env.*
-!.env.example
 .idea/
 .vscode/
 *.log
