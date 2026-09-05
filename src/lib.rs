@@ -238,28 +238,34 @@ fn compact_key(key: &str) -> String {
         .collect()
 }
 
-fn is_sensitive_key(key: &str) -> bool {
+fn is_secret_key(key: &str) -> bool {
     matches!(
         compact_key(key).as_str(),
-        "formattedaccount"
-            | "accountnumber"
-            | "bankaccount"
-            | "bankaccountnumber"
-            | "iban"
-            | "authorisation"
+        "authorisation"
             | "authorization"
             | "credential"
             | "credentials"
             | "accesstoken"
             | "appidtoken"
             | "secret"
-            | "user"
-            | "userid"
-            | "hash"
-            | "cardnumber"
-            | "cardsuffix"
-            | "pan"
-            | "email"
+    )
+}
+
+fn is_account_number_key(key: &str) -> bool {
+    matches!(
+        compact_key(key).as_str(),
+        "formattedaccount" | "accountnumber" | "bankaccount" | "bankaccountnumber" | "iban"
+    )
+}
+
+fn is_card_number_key(key: &str) -> bool {
+    matches!(compact_key(key).as_str(), "cardnumber" | "pan")
+}
+
+fn is_contact_detail_key(key: &str) -> bool {
+    matches!(
+        compact_key(key).as_str(),
+        "email"
             | "emailaddress"
             | "phone"
             | "phonenumber"
@@ -268,34 +274,6 @@ fn is_sensitive_key(key: &str) -> bool {
             | "address"
             | "postaladdress"
             | "streetaddress"
-            | "accountholder"
-            | "holdername"
-            | "ownername"
-            | "legalname"
-            | "firstname"
-            | "lastname"
-            | "givenname"
-            | "familyname"
-            | "fullname"
-    )
-}
-
-fn is_person_name_context(key: &str) -> bool {
-    matches!(
-        compact_key(key).as_str(),
-        "account"
-            | "otheraccount"
-            | "counterparty"
-            | "payer"
-            | "payee"
-            | "contact"
-            | "accountholder"
-            | "holder"
-            | "owner"
-            | "user"
-            | "beneficiary"
-            | "sender"
-            | "recipient"
     )
 }
 
@@ -303,48 +281,60 @@ fn redact(value: &mut Value) {
     *value = Value::String(REDACTED.to_string());
 }
 
-fn mask_nested_pii(value: &mut Value, parent_key: Option<&str>) {
+fn mask_identifier(value: &mut Value) {
+    let Some(raw) = value.as_str() else {
+        redact(value);
+        return;
+    };
+
+    let visible = raw
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .count();
+    if visible <= 4 {
+        return;
+    }
+
+    let mut remaining = visible - 4;
+    let masked: String = raw
+        .chars()
+        .map(|character| {
+            if character.is_ascii_alphanumeric() && remaining > 0 {
+                remaining -= 1;
+                '•'
+            } else {
+                character
+            }
+        })
+        .collect();
+    *value = Value::String(masked);
+}
+
+fn mask_nested_pii(value: &mut Value) {
     match value {
         Value::Object(object) => {
-            let mask_names = parent_key.is_some_and(is_person_name_context);
             for (key, child) in object {
-                if is_sensitive_key(key) || (compact_key(key) == "name" && mask_names) {
+                if is_secret_key(key) || is_contact_detail_key(key) {
                     redact(child);
+                } else if is_account_number_key(key) || is_card_number_key(key) {
+                    mask_identifier(child);
                 } else {
-                    mask_nested_pii(child, Some(key));
+                    mask_nested_pii(child);
                 }
             }
         }
         Value::Array(items) => {
             for item in items {
-                mask_nested_pii(item, parent_key);
+                mask_nested_pii(item);
             }
         }
         _ => {}
     }
 }
 
-fn mask_account_payload(value: &mut Value) {
-    mask_nested_pii(value, None);
-
-    for collection_key in ["items", "data"] {
-        if let Some(items) = value.get_mut(collection_key).and_then(Value::as_array_mut) {
-            for account in items {
-                if let Some(name) = account.get_mut("name") {
-                    redact(name);
-                }
-            }
-        }
-    }
-}
-
-fn apply_pii_policy(mut value: Value, mask_pii: bool, accounts_payload: bool) -> Value {
+fn apply_pii_policy(mut value: Value, mask_pii: bool) -> Value {
     if mask_pii {
-        if accounts_payload {
-            mask_account_payload(&mut value);
-        } else {
-            mask_nested_pii(&mut value, None);
-        }
+        mask_nested_pii(&mut value);
     }
     value
 }
@@ -408,7 +398,7 @@ impl AkahuServer {
 #[tool_router]
 impl AkahuServer {
     #[tool(
-        description = "List connected accounts, balances, types, status, and attributes. Personally identifying fields are masked by default.",
+        description = "List connected accounts, balances, types, status, and attributes. Privacy masking is enabled by default without hiding account identity or financial context.",
         annotations(title = "List Akahu accounts", read_only_hint = true)
     )]
     async fn list_accounts(&self) -> Result<Json<Value>, ErrorData> {
@@ -417,7 +407,7 @@ impl AkahuServer {
             .request(&["accounts"], &[])
             .await
             .map_err(as_tool_error)?;
-        let mut payload = apply_pii_policy(payload, self.mask_pii, true);
+        let mut payload = apply_pii_policy(payload, self.mask_pii);
         if let Some(object) = payload.as_object_mut() {
             object.insert("pii_masked".to_string(), Value::Bool(self.mask_pii));
         }
@@ -425,7 +415,7 @@ impl AkahuServer {
     }
 
     #[tool(
-        description = "Get settled transactions. UTC ISO timestamps; start is exclusive and end is inclusive. Defaults to 30 days. Personally identifying fields are masked by default.",
+        description = "Get settled transactions. UTC ISO timestamps; start is exclusive and end is inclusive. Defaults to 30 days. Privacy masking is enabled by default without hiding counterparties or financial context.",
         annotations(title = "Get settled Akahu transactions", read_only_hint = true)
     )]
     async fn get_transactions(
@@ -457,7 +447,7 @@ impl AkahuServer {
             }
         }
         .map_err(as_tool_error)?;
-        let result = apply_pii_policy(result, self.mask_pii, false);
+        let result = apply_pii_policy(result, self.mask_pii);
 
         let mut output = Map::new();
         output.insert("start_exclusive".to_string(), Value::String(start));
@@ -472,7 +462,7 @@ impl AkahuServer {
     }
 
     #[tool(
-        description = "Get every page of pending transactions, clearly provisional and separate from settled totals. Personally identifying fields are masked by default.",
+        description = "Get every page of pending transactions, clearly provisional and separate from settled totals. Privacy masking is enabled by default without hiding counterparties or financial context.",
         annotations(title = "Get pending Akahu transactions", read_only_hint = true)
     )]
     async fn get_pending_transactions(
@@ -497,7 +487,7 @@ impl AkahuServer {
             }
         }
         .map_err(as_tool_error)?;
-        let result = apply_pii_policy(result, self.mask_pii, false);
+        let result = apply_pii_policy(result, self.mask_pii);
 
         let mut output = Map::new();
         output.insert("account_id".to_string(), Value::String(account_scope));
@@ -519,7 +509,7 @@ impl ServerHandler for AkahuServer {
         let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
         info.server_info = Implementation::new("Akahu MCP", env!("CARGO_PKG_VERSION"));
         info.instructions = Some(
-            "Read-only access to Akahu-connected accounts and transactions. Never perform payments, transfers, authorizations, connection changes, or account modifications. Treat all returned data as sensitive. Personally identifying fields are masked by default; operators can explicitly disable masking with AKAHU_MASK_PII=false."
+            "Read-only access to Akahu-connected accounts and transactions. Never perform payments, transfers, authorizations, connection changes, or account modifications. Treat all returned data as sensitive. Privacy masking is enabled by default: credentials and contact details are redacted, account/card numbers are partially masked, and financial context such as names, counterparties, merchants, descriptions, amounts, balances, and Akahu IDs is preserved. Operators can explicitly disable masking with AKAHU_MASK_PII=false."
                 .to_string(),
         );
         info
@@ -644,26 +634,31 @@ mod tests {
     }
 
     #[test]
-    fn account_payload_masks_personal_fields_but_keeps_institution_name() {
+    fn account_payload_keeps_identity_but_masks_secrets_and_number() {
         let payload = json!({
             "items": [{
                 "name": "Example Person",
                 "formatted_account": "12-3456-7890123-00",
+                "_id": "acc_example",
                 "_authorisation": "authorisation_example",
                 "_credentials": "credentials_example",
                 "connection": {"name": "Example Bank"}
             }]
         });
-        let masked = apply_pii_policy(payload, true, true);
-        assert_eq!(masked["items"][0]["name"], REDACTED);
-        assert_eq!(masked["items"][0]["formatted_account"], REDACTED);
+        let masked = apply_pii_policy(payload, true);
+        assert_eq!(masked["items"][0]["name"], "Example Person");
+        assert_eq!(
+            masked["items"][0]["formatted_account"],
+            "••-••••-•••••23-00"
+        );
+        assert_eq!(masked["items"][0]["_id"], "acc_example");
         assert_eq!(masked["items"][0]["_authorisation"], REDACTED);
         assert_eq!(masked["items"][0]["_credentials"], REDACTED);
         assert_eq!(masked["items"][0]["connection"]["name"], "Example Bank");
     }
 
     #[test]
-    fn transaction_payload_masks_counterparty_pii_but_keeps_merchant_data() {
+    fn transaction_payload_preserves_financial_context() {
         let payload = json!({
             "items": [{
                 "description": "CARD PURCHASE",
@@ -677,17 +672,35 @@ mod tests {
                 }
             }]
         });
-        let masked = apply_pii_policy(payload, true, false);
-        assert_eq!(masked["items"][0]["other_account"]["name"], REDACTED);
+        let masked = apply_pii_policy(payload, true);
+        assert_eq!(
+            masked["items"][0]["other_account"]["name"],
+            "Example Person"
+        );
         assert_eq!(
             masked["items"][0]["other_account"]["account_number"],
-            REDACTED
+            "••-••••-•••••23-00"
         );
-        assert_eq!(masked["items"][0]["_user"], REDACTED);
-        assert_eq!(masked["items"][0]["hash"], REDACTED);
-        assert_eq!(masked["items"][0]["meta"]["card_suffix"], REDACTED);
+        assert_eq!(masked["items"][0]["_user"], "user_example");
+        assert_eq!(masked["items"][0]["hash"], "transaction_hash");
+        assert_eq!(masked["items"][0]["meta"]["card_suffix"], "1234");
         assert_eq!(masked["items"][0]["merchant"]["name"], "Example Store");
         assert_eq!(masked["items"][0]["description"], "CARD PURCHASE");
+    }
+
+    #[test]
+    fn contact_details_are_redacted_without_hiding_names() {
+        let payload = json!({
+            "name": "Example Person",
+            "email": "person@example.test",
+            "phone": "+64 21 123 4567",
+            "address": "1 Example Street"
+        });
+        let masked = apply_pii_policy(payload, true);
+        assert_eq!(masked["name"], "Example Person");
+        assert_eq!(masked["email"], REDACTED);
+        assert_eq!(masked["phone"], REDACTED);
+        assert_eq!(masked["address"], REDACTED);
     }
 
     #[test]
@@ -695,6 +708,6 @@ mod tests {
         let payload = json!({
             "items": [{"name": "Example Person", "formatted_account": "12-3456"}]
         });
-        assert_eq!(apply_pii_policy(payload.clone(), false, true), payload);
+        assert_eq!(apply_pii_policy(payload.clone(), false), payload);
     }
 }

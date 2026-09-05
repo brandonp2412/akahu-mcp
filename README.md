@@ -7,7 +7,7 @@ The server exposes account and transaction data to MCP clients over stdio. It in
 ## Features
 
 - Read-only by construction: only three MCP tools are registered.
-- Personally identifying information (PII) is masked by default.
+- Privacy masking is enabled by default without removing the financial context an MCP client needs to answer useful questions.
 - Settled and pending transactions are kept separate.
 - Settled transaction queries default to the most recent 30 days.
 - Cursor pagination with a safety cap and optional result limits.
@@ -36,7 +36,7 @@ Set the following environment variables:
 | --- | --- | --- |
 | `AKAHU_ACCESS_TOKEN` | Yes | Akahu user access token. |
 | `AKAHU_APP_ID_TOKEN` | Yes | Akahu app ID token. |
-| `AKAHU_MASK_PII` | No | PII masking. Defaults to enabled. Set to `false`, `0`, `no`, or `off` to return unmasked fields. |
+| `AKAHU_MASK_PII` | No | Privacy masking. Defaults to enabled. Set to `false`, `0`, `no`, or `off` to return completely unmasked Akahu fields. |
 
 Never commit real Akahu credentials to a repository or MCP client configuration that is shared with others.
 
@@ -62,18 +62,18 @@ The server supports conventional MCP initialization and also accepts direct tool
 
 ## PII masking
 
-PII masking is enabled unless the operator explicitly disables it with `AKAHU_MASK_PII=false` (or `0`, `no`, or `off`).
+Privacy masking is enabled unless the operator explicitly disables it with `AKAHU_MASK_PII=false` (or `0`, `no`, or `off`). The default policy is deliberately usefulness-preserving: it does not hide the people, counterparties, merchants, transactions, balances, descriptions, account IDs, or other financial context needed to reason about the data.
 
-By default, the server redacts common personal fields such as:
+By default, the server:
 
-- account holder names and formatted/account numbers;
-- email addresses and phone numbers;
-- postal/street addresses;
-- personal names nested under account, counterparty, payer/payee, beneficiary, sender/recipient, user, owner, or contact objects.
+- fully redacts credential/authorization/token fields if they ever appear in an Akahu response;
+- fully redacts contact details such as email addresses, phone numbers, and postal/street addresses;
+- partially masks full bank-account/IBAN and payment-card numbers while preserving the final four alphanumeric characters so accounts remain distinguishable;
+- preserves account-holder names, counterparty/payee/payer names, Akahu object IDs, transaction hashes, card suffixes, institution names, merchant names, descriptions, amounts, balances, dates, categories, and other transaction metadata.
 
-Institution and merchant names are preserved. Transaction descriptions are also preserved because they are core transaction data and cannot be reliably classified as PII without destroying useful information. Treat all MCP output as sensitive even when masking is enabled.
+This masking is a guard against unnecessarily exposing secrets or directly reusable identifiers, not an anonymization layer. The MCP output still contains sensitive financial data and should be treated accordingly.
 
-Every tool response includes `pii_masked` so a client can tell whether masking was active.
+Every tool response includes `pii_masked` so a client can tell whether the privacy policy was active.
 
 ## Security model
 
