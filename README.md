@@ -1,4 +1,6 @@
-# akahu-mcp
+<p align="center">
+  <img src="assets/logo.svg" alt="akahu-mcp" width="900">
+</p>
 
 An unofficial, read-only [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) server for accessing banking data through the [Akahu API](https://developers.akahu.nz/).
 
