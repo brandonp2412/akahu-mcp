@@ -175,13 +175,14 @@ impl AkahuClient {
 
 fn next_cursor(payload: &Value) -> Option<String> {
     for key in ["cursor", "next_cursor"] {
-        if let Some(value) = payload.get(key) {
-            if let Some(next) = value.get("next").and_then(Value::as_str) {
-                return Some(next.to_string());
-            }
-            if let Some(next) = value.as_str() {
-                return Some(next.to_string());
-            }
+        let Some(value) = payload.get(key) else {
+            continue;
+        };
+        if let Some(next) = value.get("next").and_then(Value::as_str) {
+            return Some(next.to_string());
+        }
+        if let Some(next) = value.as_str() {
+            return Some(next.to_string());
         }
     }
     None
