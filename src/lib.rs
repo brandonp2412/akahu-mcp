@@ -151,19 +151,20 @@ impl AkahuClient {
                 items.extend(page_items.iter().cloned());
             }
 
-            if let Some(limit) = limit
-                && items.len() >= limit
+            let next = next_cursor(&payload);
+            if let Some((count, pages_complete, result_limited)) =
+                pagination_limit_state(items.len(), limit, next.is_some())
             {
-                items.truncate(limit);
+                items.truncate(count);
                 return Ok(json!({
                     "items": items,
-                    "count": limit,
-                    "pages_complete": true,
-                    "result_limited": true
+                    "count": count,
+                    "pages_complete": pages_complete,
+                    "result_limited": result_limited
                 }));
             }
 
-            cursor = next_cursor(&payload);
+            cursor = next;
             if cursor.is_none() {
                 return Ok(json!({
                     "count": items.len(),
@@ -181,6 +182,18 @@ impl AkahuClient {
             "warning": "Safety page limit reached"
         }))
     }
+}
+
+fn pagination_limit_state(
+    item_count: usize,
+    limit: Option<usize>,
+    has_next_page: bool,
+) -> Option<(usize, bool, bool)> {
+    let limit = limit?;
+    if item_count < limit {
+        return None;
+    }
+    Some((limit, !has_next_page, item_count > limit || has_next_page))
 }
 
 fn cursor_is_repeated(seen: &mut HashSet<String>, cursor: Option<&str>) -> bool {
@@ -651,6 +664,23 @@ mod tests {
         assert_eq!(next_cursor(&json!({"cursor": {"next": ""}})), None);
         assert_eq!(next_cursor(&json!({"next_cursor": "   "})), None);
         assert_eq!(next_cursor(&json!({})), None);
+    }
+
+    #[test]
+    fn pagination_limit_metadata_distinguishes_complete_and_truncated_results() {
+        assert_eq!(pagination_limit_state(4, Some(5), false), None);
+        assert_eq!(
+            pagination_limit_state(5, Some(5), false),
+            Some((5, true, false))
+        );
+        assert_eq!(
+            pagination_limit_state(5, Some(5), true),
+            Some((5, false, true))
+        );
+        assert_eq!(
+            pagination_limit_state(6, Some(5), false),
+            Some((5, true, true))
+        );
     }
 
     #[test]
