@@ -68,7 +68,7 @@ Privacy masking is enabled unless the operator explicitly disables it with `AKAH
 
 By default, the server:
 
-- fully redacts credential/authorization/token fields if they ever appear in an Akahu response;
+- fully redacts credentials, access/refresh tokens, API keys, passwords, client secrets, and other reusable secret fields if they ever appear in an Akahu response; Akahu's `_authorisation` object ID is preserved because it is not login credentials;
 - fully redacts contact details such as email addresses, phone numbers, and postal/street addresses;
 - partially masks full bank-account/IBAN and payment-card numbers while preserving the final four alphanumeric characters so accounts remain distinguishable;
 - preserves account-holder names, counterparty/payee/payer names, Akahu object IDs, transaction hashes, card suffixes, institution names, merchant names, descriptions, amounts, balances, dates, categories, and other transaction metadata.

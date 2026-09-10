@@ -279,6 +279,13 @@ fn compact_key(key: &str) -> String {
 }
 
 fn is_secret_key(key: &str) -> bool {
+    // Akahu's `_authorisation` field is a random object identifier used to link accounts
+    // connected under the same bank authorisation. It is explicitly not login credentials,
+    // so preserve it like other Akahu object IDs rather than treating its name as a secret.
+    if key == "_authorisation" {
+        return false;
+    }
+
     matches!(
         compact_key(key).as_str(),
         "authorisation"
@@ -286,8 +293,13 @@ fn is_secret_key(key: &str) -> bool {
             | "credential"
             | "credentials"
             | "accesstoken"
+            | "refreshtoken"
             | "appidtoken"
+            | "apikey"
+            | "password"
+            | "clientsecret"
             | "secret"
+            | "token"
     )
 }
 
@@ -732,7 +744,10 @@ mod tests {
             "••-••••-•••••00-00"
         );
         assert_eq!(masked["items"][0]["_id"], "acc_example");
-        assert_eq!(masked["items"][0]["_authorisation"], REDACTED);
+        assert_eq!(
+            masked["items"][0]["_authorisation"],
+            "authorisation_example"
+        );
         assert_eq!(masked["items"][0]["_credentials"], REDACTED);
         assert_eq!(masked["items"][0]["connection"]["name"], "Example Bank");
     }
@@ -792,6 +807,27 @@ mod tests {
         let masked = apply_pii_policy(payload, true);
         assert_eq!(masked["account_number"], REDACTED);
         assert_eq!(masked["card_number"], REDACTED);
+    }
+
+    #[test]
+    fn generic_reusable_secrets_are_still_redacted() {
+        let payload = json!({
+            "token": "bearer-secret",
+            "refresh_token": "refresh-secret",
+            "api_key": "api-secret",
+            "password": "password-secret",
+            "client_secret": "client-secret"
+        });
+        let masked = apply_pii_policy(payload, true);
+        for key in [
+            "token",
+            "refresh_token",
+            "api_key",
+            "password",
+            "client_secret",
+        ] {
+            assert_eq!(masked[key], REDACTED);
+        }
     }
 
     #[test]
