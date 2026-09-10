@@ -1,4 +1,4 @@
-use std::{env, time::Duration as StdDuration};
+use std::{collections::HashSet, env, time::Duration as StdDuration};
 
 use chrono::{DateTime, Duration, SecondsFormat, Utc};
 use reqwest::StatusCode;
@@ -125,8 +125,18 @@ impl AkahuClient {
         let limit = limit.map(|value| value.clamp(1, MAX_RESULT_LIMIT));
         let mut items = Vec::new();
         let mut cursor: Option<String> = None;
+        let mut seen_cursors = HashSet::new();
 
         for _ in 0..MAX_PAGES {
+            if cursor_is_repeated(&mut seen_cursors, cursor.as_deref()) {
+                return Ok(json!({
+                    "count": items.len(),
+                    "items": items,
+                    "pages_complete": false,
+                    "warning": "Akahu pagination cursor repeated"
+                }));
+            }
+
             let mut current = params.to_vec();
             if let Some(cursor) = &cursor {
                 current.push(("cursor".to_string(), cursor.clone()));
@@ -171,6 +181,10 @@ impl AkahuClient {
             "warning": "Safety page limit reached"
         }))
     }
+}
+
+fn cursor_is_repeated(seen: &mut HashSet<String>, cursor: Option<&str>) -> bool {
+    cursor.is_some_and(|cursor| !seen.insert(cursor.to_string()))
 }
 
 fn next_cursor(payload: &Value) -> Option<String> {
@@ -599,6 +613,16 @@ mod tests {
             Some("xyz".to_string())
         );
         assert_eq!(next_cursor(&json!({})), None);
+    }
+
+    #[test]
+    fn pagination_cursor_guard_detects_repeated_and_cyclic_cursors() {
+        let mut seen = HashSet::new();
+        assert!(!cursor_is_repeated(&mut seen, None));
+        assert!(!cursor_is_repeated(&mut seen, Some("a")));
+        assert!(!cursor_is_repeated(&mut seen, Some("b")));
+        assert!(cursor_is_repeated(&mut seen, Some("a")));
+        assert!(cursor_is_repeated(&mut seen, Some("b")));
     }
 
     #[test]
