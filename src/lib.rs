@@ -143,13 +143,8 @@ impl AkahuClient {
             }
 
             let payload = self.request(segments, &current).await?;
-            if let Some(page_items) = payload
-                .get("items")
-                .or_else(|| payload.get("data"))
-                .and_then(Value::as_array)
-            {
-                items.extend(page_items.iter().cloned());
-            }
+            let page_items = page_items(&payload)?;
+            items.extend(page_items.iter().cloned());
 
             let next = next_cursor(&payload);
             if let Some((count, pages_complete, result_limited)) =
@@ -182,6 +177,16 @@ impl AkahuClient {
             "warning": "Safety page limit reached"
         }))
     }
+}
+
+fn page_items(payload: &Value) -> Result<&Vec<Value>, String> {
+    let value = payload
+        .get("items")
+        .or_else(|| payload.get("data"))
+        .ok_or_else(|| "Akahu paginated response did not contain items".to_string())?;
+    value
+        .as_array()
+        .ok_or_else(|| "Akahu paginated response items were not an array".to_string())
 }
 
 fn pagination_limit_state(
@@ -664,6 +669,26 @@ mod tests {
         assert_eq!(next_cursor(&json!({"cursor": {"next": ""}})), None);
         assert_eq!(next_cursor(&json!({"next_cursor": "   "})), None);
         assert_eq!(next_cursor(&json!({})), None);
+    }
+
+    #[test]
+    fn paginated_items_require_a_valid_array() {
+        assert_eq!(
+            page_items(&json!({"items": [{"id": 1}]})).unwrap(),
+            &vec![json!({"id": 1})]
+        );
+        assert_eq!(
+            page_items(&json!({"data": [{"id": 2}]})).unwrap(),
+            &vec![json!({"id": 2})]
+        );
+        assert_eq!(
+            page_items(&json!({})).unwrap_err(),
+            "Akahu paginated response did not contain items"
+        );
+        assert_eq!(
+            page_items(&json!({"items": {"id": 1}})).unwrap_err(),
+            "Akahu paginated response items were not an array"
+        );
     }
 
     #[test]
