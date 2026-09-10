@@ -206,15 +206,29 @@ fn backoff(attempt: usize) -> StdDuration {
     StdDuration::from_millis(250 * (1_u64 << attempt.min(4)))
 }
 
+fn parse_retry_after(value: &str, now: DateTime<Utc>) -> Option<StdDuration> {
+    if let Ok(seconds) = value.trim().parse::<u64>() {
+        return (seconds <= 30).then(|| StdDuration::from_secs(seconds));
+    }
+
+    let retry_at = DateTime::parse_from_rfc2822(value.trim())
+        .ok()?
+        .with_timezone(&Utc);
+    let delay = retry_at.signed_duration_since(now);
+    if delay <= Duration::zero() {
+        return Some(StdDuration::ZERO);
+    }
+    let delay = delay.to_std().ok()?;
+    (delay <= StdDuration::from_secs(30)).then_some(delay)
+}
+
 fn retry_delay(response: &reqwest::Response, attempt: usize) -> StdDuration {
     let fallback = backoff(attempt);
     response
         .headers()
         .get(reqwest::header::RETRY_AFTER)
         .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|seconds| *seconds <= 30)
-        .map(StdDuration::from_secs)
+        .and_then(|value| parse_retry_after(value, Utc::now()))
         .unwrap_or(fallback)
 }
 
@@ -667,6 +681,27 @@ mod tests {
     fn result_limit_is_bounded() {
         assert_eq!(0_usize.clamp(1, MAX_RESULT_LIMIT), 1);
         assert_eq!(5000_usize.clamp(1, MAX_RESULT_LIMIT), MAX_RESULT_LIMIT);
+    }
+
+    #[test]
+    fn retry_after_supports_seconds_and_http_dates() {
+        let now = DateTime::parse_from_rfc3339("2026-09-10T08:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        assert_eq!(parse_retry_after("5", now), Some(StdDuration::from_secs(5)));
+        assert_eq!(
+            parse_retry_after("Thu, 10 Sep 2026 08:00:12 GMT", now),
+            Some(StdDuration::from_secs(12))
+        );
+        assert_eq!(
+            parse_retry_after("Thu, 10 Sep 2026 07:59:00 GMT", now),
+            Some(StdDuration::ZERO)
+        );
+        assert_eq!(parse_retry_after("31", now), None);
+        assert_eq!(
+            parse_retry_after("Thu, 10 Sep 2026 08:01:00 GMT", now),
+            None
+        );
     }
 
     #[test]
