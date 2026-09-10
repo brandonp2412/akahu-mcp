@@ -193,10 +193,16 @@ fn next_cursor(payload: &Value) -> Option<String> {
             continue;
         };
         if let Some(next) = value.get("next").and_then(Value::as_str) {
-            return Some(next.to_string());
+            let next = next.trim();
+            if !next.is_empty() {
+                return Some(next.to_string());
+            }
         }
         if let Some(next) = value.as_str() {
-            return Some(next.to_string());
+            let next = next.trim();
+            if !next.is_empty() {
+                return Some(next.to_string());
+            }
         }
     }
     None
@@ -638,6 +644,12 @@ mod tests {
             next_cursor(&json!({"next_cursor": "xyz"})),
             Some("xyz".to_string())
         );
+        assert_eq!(
+            next_cursor(&json!({"cursor": {"next": "  abc  "}})),
+            Some("abc".to_string())
+        );
+        assert_eq!(next_cursor(&json!({"cursor": {"next": ""}})), None);
+        assert_eq!(next_cursor(&json!({"next_cursor": "   "})), None);
         assert_eq!(next_cursor(&json!({})), None);
     }
 
