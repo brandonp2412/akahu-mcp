@@ -206,23 +206,34 @@ fn retry_delay(response: &reqwest::Response, attempt: usize) -> StdDuration {
 
 fn resolve_dates(start: Option<&str>, end: Option<&str>) -> Result<(String, String), String> {
     let now = Utc::now();
-    let end = match end {
-        Some(value) => {
+    let (end_value, end_at) = match end {
+        Some(value) => (
+            value.to_string(),
             DateTime::parse_from_rfc3339(value)
-                .map_err(|_| "end must be an ISO 8601 timestamp".to_string())?;
-            value.to_string()
-        }
-        None => now.to_rfc3339_opts(SecondsFormat::Millis, true),
+                .map_err(|_| "end must be an ISO 8601 timestamp".to_string())?
+                .with_timezone(&Utc),
+        ),
+        None => (now.to_rfc3339_opts(SecondsFormat::Millis, true), now),
     };
-    let start = match start {
-        Some(value) => {
+    let (start_value, start_at) = match start {
+        Some(value) => (
+            value.to_string(),
             DateTime::parse_from_rfc3339(value)
-                .map_err(|_| "start must be an ISO 8601 timestamp".to_string())?;
-            value.to_string()
+                .map_err(|_| "start must be an ISO 8601 timestamp".to_string())?
+                .with_timezone(&Utc),
+        ),
+        None => {
+            let start_at = end_at - Duration::days(30);
+            (
+                start_at.to_rfc3339_opts(SecondsFormat::Millis, true),
+                start_at,
+            )
         }
-        None => (now - Duration::days(30)).to_rfc3339_opts(SecondsFormat::Millis, true),
     };
-    Ok((start, end))
+    if start_at > end_at {
+        return Err("start must be earlier than or equal to end".to_string());
+    }
+    Ok((start_value, end_value))
 }
 
 fn pii_masking_enabled(value: Option<&str>) -> bool {
@@ -293,6 +304,7 @@ fn mask_identifier(value: &mut Value) {
         .filter(|character| character.is_ascii_alphanumeric())
         .count();
     if visible <= 4 {
+        redact(value);
         return;
     }
 
@@ -599,6 +611,14 @@ mod tests {
         assert_eq!(start, "2026-08-01T00:00:00Z");
         assert_eq!(end, "2026-09-01T00:00:00+00:00");
         assert!(resolve_dates(Some("not-a-date"), None).is_err());
+        assert!(resolve_dates(Some("2026-09-02T00:00:00Z"), Some("2026-09-01T00:00:00Z")).is_err());
+    }
+
+    #[test]
+    fn custom_end_defaults_start_to_thirty_days_before_end() {
+        let (start, end) = resolve_dates(None, Some("2020-02-01T00:00:00Z")).unwrap();
+        assert_eq!(start, "2020-01-02T00:00:00.000Z");
+        assert_eq!(end, "2020-02-01T00:00:00Z");
     }
 
     #[test]
@@ -702,6 +722,17 @@ mod tests {
         assert_eq!(masked["email"], REDACTED);
         assert_eq!(masked["phone"], REDACTED);
         assert_eq!(masked["address"], REDACTED);
+    }
+
+    #[test]
+    fn short_financial_identifiers_are_not_exposed() {
+        let payload = json!({
+            "account_number": "1234",
+            "card_number": "999"
+        });
+        let masked = apply_pii_policy(payload, true);
+        assert_eq!(masked["account_number"], REDACTED);
+        assert_eq!(masked["card_number"], REDACTED);
     }
 
     #[test]
