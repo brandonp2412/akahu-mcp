@@ -5,7 +5,7 @@ use reqwest::StatusCode;
 use rmcp::{
     ErrorData, Json, ServerHandler,
     handler::server::{router::tool::ToolRouter, wrapper::Parameters},
-    model::{Implementation, ServerCapabilities, ServerInfo},
+    model::{Implementation, ServerCapabilities, ServerConfig},
     tool, tool_handler, tool_router,
 };
 use schemars::JsonSchema;
@@ -582,8 +582,8 @@ impl AkahuServer {
 
 #[tool_handler(router = self.tool_router)]
 impl ServerHandler for AkahuServer {
-    fn get_info(&self) -> ServerInfo {
-        let mut info = ServerInfo::new(ServerCapabilities::builder().enable_tools().build());
+    fn get_info(&self) -> ServerConfig {
+        let mut info = ServerConfig::new(ServerCapabilities::builder().enable_tools().build());
         info.server_info = Implementation::new("Akahu MCP", env!("CARGO_PKG_VERSION"));
         info.instructions = Some(
             "Read-only access to Akahu-connected accounts and transactions. Never perform payments, transfers, authorizations, connection changes, or account modifications. Treat all returned data as sensitive. Privacy masking is enabled by default: credentials and contact details are redacted, account/card numbers are partially masked, and financial context such as names, counterparties, merchants, descriptions, amounts, balances, and Akahu IDs is preserved. Operators can explicitly disable masking with AKAHU_MASK_PII=false."
