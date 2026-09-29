@@ -433,7 +433,8 @@ pub struct GetTransactionsRequest {
     pub account_id: Option<String>,
     #[serde(default)]
     #[schemars(
-        description = "Optional maximum number of transactions to return, clamped to 1..1000."
+        description = "Optional maximum number of transactions to return, clamped to 1..1000.",
+        range(min = 1, max = MAX_RESULT_LIMIT)
     )]
     pub limit: Option<usize>,
 }
@@ -445,7 +446,8 @@ pub struct GetPendingTransactionsRequest {
     pub account_id: Option<String>,
     #[serde(default)]
     #[schemars(
-        description = "Optional maximum number of pending transactions to return, clamped to 1..1000."
+        description = "Optional maximum number of pending transactions to return, clamped to 1..1000.",
+        range(min = 1, max = MAX_RESULT_LIMIT)
     )]
     pub limit: Option<usize>,
 }
@@ -638,6 +640,29 @@ mod tests {
                 .and_then(|annotations| annotations.read_only_hint)
                 == Some(true)
         }));
+    }
+
+    #[test]
+    fn result_limit_schema_matches_server_bounds() {
+        let server = test_server(true);
+
+        for name in ["get_transactions", "get_pending_transactions"] {
+            let tool = server
+                .tool_router
+                .list_all()
+                .into_iter()
+                .find(|tool| tool.name == name)
+                .unwrap();
+            let limit_schema = tool
+                .input_schema
+                .get("properties")
+                .and_then(Value::as_object)
+                .and_then(|properties| properties.get("limit"))
+                .unwrap();
+
+            assert_eq!(limit_schema.get("minimum"), Some(&json!(1)));
+            assert_eq!(limit_schema.get("maximum"), Some(&json!(MAX_RESULT_LIMIT)));
+        }
     }
 
     #[test]
