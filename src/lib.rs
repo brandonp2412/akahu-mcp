@@ -1,6 +1,6 @@
 use std::{collections::HashSet, env, time::Duration as StdDuration};
 
-use chrono::{DateTime, Duration, SecondsFormat, Utc};
+use chrono::{DateTime, Duration, NaiveDate, SecondsFormat, Utc};
 use reqwest::StatusCode;
 use rmcp::{
     ErrorData, Json, ServerHandler,
@@ -256,24 +256,26 @@ fn retry_delay(response: &reqwest::Response, attempt: usize) -> StdDuration {
         .unwrap_or(fallback)
 }
 
+fn parse_date_bound(value: &str, field: &str) -> Result<DateTime<Utc>, String> {
+    if let Ok(value) = DateTime::parse_from_rfc3339(value) {
+        return Ok(value.with_timezone(&Utc));
+    }
+
+    NaiveDate::parse_from_str(value, "%Y-%m-%d")
+        .ok()
+        .and_then(|date| date.and_hms_opt(0, 0, 0))
+        .map(|date| date.and_utc())
+        .ok_or_else(|| format!("{field} must be an ISO 8601 date or timestamp"))
+}
+
 fn resolve_dates(start: Option<&str>, end: Option<&str>) -> Result<(String, String), String> {
     let now = Utc::now();
     let (end_value, end_at) = match end {
-        Some(value) => (
-            value.to_string(),
-            DateTime::parse_from_rfc3339(value)
-                .map_err(|_| "end must be an ISO 8601 timestamp".to_string())?
-                .with_timezone(&Utc),
-        ),
+        Some(value) => (value.to_string(), parse_date_bound(value, "end")?),
         None => (now.to_rfc3339_opts(SecondsFormat::Millis, true), now),
     };
     let (start_value, start_at) = match start {
-        Some(value) => (
-            value.to_string(),
-            DateTime::parse_from_rfc3339(value)
-                .map_err(|_| "start must be an ISO 8601 timestamp".to_string())?
-                .with_timezone(&Utc),
-        ),
+        Some(value) => (value.to_string(), parse_date_bound(value, "start")?),
         None => {
             let start_at = end_at - Duration::days(30);
             (
@@ -423,10 +425,14 @@ fn as_tool_error(message: String) -> ErrorData {
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct GetTransactionsRequest {
     #[serde(default)]
-    #[schemars(description = "UTC ISO 8601 lower bound; exclusive. Defaults to 30 days ago.")]
+    #[schemars(
+        description = "UTC ISO 8601 date or timestamp lower bound; exclusive. Defaults to 30 days ago."
+    )]
     pub start: Option<String>,
     #[serde(default)]
-    #[schemars(description = "UTC ISO 8601 upper bound; inclusive. Defaults to now.")]
+    #[schemars(
+        description = "UTC ISO 8601 date or timestamp upper bound; inclusive. Defaults to now."
+    )]
     pub end: Option<String>,
     #[serde(default)]
     #[schemars(description = "Optional Akahu account ID; omit for all accounts.")]
@@ -494,7 +500,7 @@ impl AkahuServer {
     }
 
     #[tool(
-        description = "Get settled transactions. UTC ISO timestamps; start is exclusive and end is inclusive. Defaults to 30 days. Privacy masking is enabled by default without hiding counterparties or financial context.",
+        description = "Get settled transactions. UTC ISO dates or timestamps; start is exclusive and end is inclusive. Defaults to 30 days. Privacy masking is enabled by default without hiding counterparties or financial context.",
         annotations(title = "Get settled Akahu transactions", read_only_hint = true)
     )]
     async fn get_transactions(
@@ -754,6 +760,13 @@ mod tests {
         assert_eq!(end, "2026-09-01T00:00:00+00:00");
         assert!(resolve_dates(Some("not-a-date"), None).is_err());
         assert!(resolve_dates(Some("2026-09-02T00:00:00Z"), Some("2026-09-01T00:00:00Z")).is_err());
+    }
+
+    #[test]
+    fn date_only_bounds_are_accepted() {
+        let (start, end) = resolve_dates(Some("2026-08-01"), Some("2026-09-01")).unwrap();
+        assert_eq!(start, "2026-08-01");
+        assert_eq!(end, "2026-09-01");
     }
 
     #[test]

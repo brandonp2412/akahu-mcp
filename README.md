@@ -25,7 +25,7 @@ The server exposes account and transaction data to MCP clients over stdio. It in
 | `get_transactions` | Gets settled transactions, optionally scoped by account, date range, and result limit. |
 | `get_pending_transactions` | Gets pending transactions, optionally scoped by account and result limit. |
 
-`get_transactions` uses UTC ISO 8601 timestamps. `start` is exclusive and `end` is inclusive. If no range is supplied, the server queries the previous 30 days.
+`get_transactions` accepts UTC ISO 8601 dates or timestamps. `start` is exclusive and `end` is inclusive. If no range is supplied, the server queries the previous 30 days.
 
 ## Requirements
 
