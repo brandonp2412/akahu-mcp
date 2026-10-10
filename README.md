@@ -27,6 +27,8 @@ The server exposes account and transaction data to MCP clients over stdio. It in
 
 `get_transactions` accepts UTC ISO 8601 dates or timestamps. `start` is exclusive and `end` is inclusive. If no range is supplied, the server queries the previous 30 days.
 
+Date-only bounds are interpreted as midnight UTC for range validation and forwarded to Akahu unchanged. Since `start` is exclusive and `end` inclusive, an `end` of `2026-09-01` does **not** include the rest of September 1. To include that entire UTC day, use `start=2026-08-31T23:59:59.999Z` and `end=2026-09-01T23:59:59.999Z` (Akahu timestamps have millisecond precision).
+
 ## Requirements
 
 - Rust 1.88 or newer to build from source.

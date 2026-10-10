@@ -426,12 +426,12 @@ fn as_tool_error(message: String) -> ErrorData {
 pub struct GetTransactionsRequest {
     #[serde(default)]
     #[schemars(
-        description = "UTC ISO 8601 date or timestamp lower bound; exclusive. Defaults to 30 days ago."
+        description = "UTC ISO 8601 date or timestamp lower bound; exclusive. Date-only values represent 00:00 UTC. Defaults to 30 days ago."
     )]
     pub start: Option<String>,
     #[serde(default)]
     #[schemars(
-        description = "UTC ISO 8601 date or timestamp upper bound; inclusive. Defaults to now."
+        description = "UTC ISO 8601 date or timestamp upper bound; inclusive. Date-only values represent 00:00 UTC, not end-of-day. Defaults to now."
     )]
     pub end: Option<String>,
     #[serde(default)]
